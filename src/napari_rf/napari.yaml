@@ -15,8 +15,8 @@ contributions:
     - id: napari-rf.make_sample_data
       python_name: napari_rf._sample_data:make_sample_data
       title: Load sample data from napari rf
-    - id: napari-rf.make_qwidget
-      python_name: napari_rf:ExampleQWidget
+    - id: napari-rf.make_rfwidget
+      python_name: napari_rf:RFWidget
       title: Make example QWidget
   readers:
     - command: napari-rf.get_reader
@@ -34,5 +34,5 @@ contributions:
       display_name: napari rf
       key: unique_id.1
   widgets:
-    - command: napari-rf.make_qwidget
-      display_name: Example QWidget
+    - command: napari-rf.make_rfwidget
+      display_name: RFWidget
