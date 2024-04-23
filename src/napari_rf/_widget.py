@@ -5,16 +5,15 @@ from typing import TYPE_CHECKING
 from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget
 from qtpy.QtWidgets import QFileDialog
 
-from skimage import feature
-from skimage.filters import gaussian, sobel, laplace
-from functools import partial
+
 import numpy as np
 
 from skimage import future
 from sklearn.ensemble import RandomForestClassifier
-
+from sklearn.exceptions import NotFittedError
 from joblib import load, dump
 
+from napari_rf.features import FeatureCreator
 
 if TYPE_CHECKING:
     import napari
@@ -28,6 +27,7 @@ class RFWidget(QWidget):
         self.viewer = viewer
 
         self.clf = None
+        self.feature_creator = FeatureCreator()
 
         self.btn_create_features = QPushButton("create features")
         self.btn_create_features.clicked.connect(self.create_features)
@@ -55,21 +55,7 @@ class RFWidget(QWidget):
 
     def create_features(self):
         img = self.viewer.layers.selection.active.data
-        self.make_simple_features(img)
-
-    def make_simple_features(self, img):
-
-        features_func = partial(feature.multiscale_basic_features,
-                                intensity=True, edges=True, texture=True, sigma_min=1, sigma_max=16)
-        features = features_func(img)
-
-        gaussians = []
-        for sigma in [1, 10]:
-            gaussians.append(gaussian(img, sigma)[..., np.newaxis])
-
-        sob = sobel(img)[..., np.newaxis]
-        log = laplace(gaussian(img, 10))[..., np.newaxis]
-        features = np.concatenate([img[..., np.newaxis], features, sob, gaussians[1] - gaussians[0], log], axis=-1)
+        features = self.feature_creator.make_simple_features(img)
         self.viewer.add_image(np.moveaxis(features, -1, 0), name='features')
 
     def train(self):
@@ -92,6 +78,7 @@ class RFWidget(QWidget):
 
         result = self.predict_segmenter(features, self.clf)
         self.viewer.add_image(result, name=f'segmentation probabilities')
+
     def predict_segmenter(self, features, clf):
         """
         taken from https://github.com/scikit-image/scikit-image/blob/v0.19.2/skimage/future/trainable_segmentation.py#L89-L118
