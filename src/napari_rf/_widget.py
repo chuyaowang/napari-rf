@@ -118,8 +118,6 @@ class RFWidget(QWidget):
             features = features.reshape((-1, sh[-1]))
 
         try:
-            predicted_labels = clf.predict(features)
-            print(f'{predicted_labels.shape}')
             predicted_labels = clf.predict_proba(features)
             print(f'{predicted_labels.shape}')
         except NotFittedError:
