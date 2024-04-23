@@ -2,7 +2,7 @@
 """
 from typing import TYPE_CHECKING
 
-from qtpy.QtWidgets import QHBoxLayout, QPushButton, QWidget
+from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget
 
 if TYPE_CHECKING:
     import napari
@@ -15,11 +15,32 @@ class RFWidget(QWidget):
         super().__init__()
         self.viewer = viewer
 
-        btn = QPushButton("Click me!")
-        btn.clicked.connect(self._on_click)
+        btn_create_features = QPushButton("create features")
+        btn_create_features.clicked.connect(self.create_features)
 
-        self.setLayout(QHBoxLayout())
-        self.layout().addWidget(btn)
+        btn_train = QPushButton("train random forest")
+        btn_train.clicked.connect(self.train)
 
-    def _on_click(self):
-        print("napari has", len(self.viewer.layers), "layers")
+        btn_load = QPushButton("load classifier")
+        btn_load.clicked.connect(self.load)
+
+        btn_save = QPushButton("save classifier")
+        btn_save.clicked.connect(self.save)
+
+        self.setLayout(QVBoxLayout())
+        self.layout().addWidget(btn_create_features)
+        self.layout().addWidget(btn_train)
+        self.layout().addWidget(btn_load)
+        self.layout().addWidget(btn_save)
+
+    def create_features(self):
+        pass
+
+    def train(self):
+        pass
+
+    def load(self):
+        pass
+
+    def save(self):
+        pass
