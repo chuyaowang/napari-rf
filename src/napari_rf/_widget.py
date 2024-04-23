@@ -35,6 +35,10 @@ class RFWidget(QWidget):
         self.btn_train = QPushButton("train random forest")
         self.btn_train.clicked.connect(self.train)
 
+        self.btn_apply_rf = QPushButton("apply random forest")
+        self.btn_apply_rf.clicked.connect(self.apply_rf)
+        self.btn_apply_rf.setDisabled(True)
+
         self.btn_load = QPushButton("load classifier")
         self.btn_load.clicked.connect(self.load)
 
@@ -45,6 +49,7 @@ class RFWidget(QWidget):
         self.setLayout(QVBoxLayout())
         self.layout().addWidget(self.btn_create_features)
         self.layout().addWidget(self.btn_train)
+        self.layout().addWidget(self.btn_apply_rf)
         self.layout().addWidget(self.btn_load)
         self.layout().addWidget(self.btn_save)
 
@@ -83,6 +88,7 @@ class RFWidget(QWidget):
 
         self.clf = future.fit_segmenter(training_labels, features, clf)
         self.btn_save.setDisabled(False)
+        self.btn_apply_rf.setDisabled(False)
 
         result = self.predict_segmenter(features, self.clf)
         self.viewer.add_image(result, name=f'segmentation probabilities')
@@ -137,6 +143,13 @@ class RFWidget(QWidget):
             output = predicted_labels.reshape(s)
             output = np.rollaxis(output, 2, 0)
         return output
+
+    def apply_rf(self):
+        if not 'features' in self.viewer.layers:
+            self.create_features()
+        features = np.moveaxis(self.viewer.layers['features'].data, 0, -1)
+        result = self.predict_segmenter(features, self.clf)
+        self.viewer.add_image(result, name=f'segmentation probabilities')
 
     def load(self):
         source_file = QFileDialog.getOpenFileName(
