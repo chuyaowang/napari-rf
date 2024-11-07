@@ -14,7 +14,7 @@ class RF:
 
     def train(self, training_labels, features):
 
-        training_labels = training_labels[0,...]
+        # training_labels = training_labels[0,...]
 
         self.clf = future.fit_segmenter(training_labels, features, self.clf)
 
@@ -52,7 +52,6 @@ class RF:
 
         try:
             predicted_labels = clf.predict_proba(features)
-            print(f'{predicted_labels.shape}')
         except NotFittedError:
             raise NotFittedError(
                 "You must train the classifier `clf` first"
