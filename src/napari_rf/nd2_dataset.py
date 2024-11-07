@@ -1,6 +1,7 @@
 from omegaconf import ListConfig
 from pims import ND2_Reader as nd2
 
+
 class Nd2Dataset():
     def __init__(self, cfg):
 
@@ -68,9 +69,8 @@ class Nd2Dataset():
         c = str(channel).zfill(self.fills['c'])
         t = str(frame).zfill(self.fills['t'])
 
-        return (img / 65535 )-0.5, f'position_{m}/z_level_{z}/channel_{c}/frame_{t}.tif'
+        return (img / 65535) - 0.5, f'position_{m}/z_level_{z}/channel_{c}/frame_{t}.tif'
 
     def __iter__(self):
         for i in range(len(self.indices)):
             yield self.__getitem__(i)
-
