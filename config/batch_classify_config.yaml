@@ -1,0 +1,6 @@
+stack_path: /media/philipp/WD1/sac6/data/20210319_Y101_growth.nd2
+classifier: /media/philipp/WD1/sac6/classifiers/rf_classifier.joblib
+frames: [0,1]
+positions: 0
+z_levels: 4
+channels_to_segment: 1
