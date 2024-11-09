@@ -6,7 +6,6 @@ class Nd2Dataset():
     def __init__(self, cfg):
 
         self.stack = nd2(cfg['dataset_path'])
-        self.normalise = cfg['normalise_img']
 
         if isinstance(cfg['positions'], ListConfig):
             self.positions = cfg['positions']
@@ -70,10 +69,7 @@ class Nd2Dataset():
         c = str(channel).zfill(self.fills['c'])
         t = str(frame).zfill(self.fills['t'])
 
-        if self.normalise:
-            img = self.normalise_img(img)
-
-        return img, f'position_{m}/z_level_{z}/channel_{c}/frame_{t}.tif'
+        return (img / 65535) - 0.5, f'position_{m}/z_level_{z}/channel_{c}/frame_{t}.tif'
 
     def __iter__(self):
         for i in range(len(self.indices)):
