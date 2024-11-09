@@ -5,7 +5,7 @@ from pims import ND2_Reader as nd2
 class Nd2Dataset():
     def __init__(self, cfg):
 
-        self.stack = nd2(cfg['stack_path'])
+        self.stack = nd2(cfg['dataset_path'])
 
         if isinstance(cfg['positions'], ListConfig):
             self.positions = cfg['positions']
