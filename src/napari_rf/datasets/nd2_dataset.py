@@ -45,6 +45,9 @@ class Nd2Dataset():
                         self.indices.append([position, z_level, channel, frame])
 
         self.fills = {a: len(str(b)) for a, b in self.stack.sizes.items()}
+        for axis in 'zmctxy':
+            if not axis in self.fills:
+                self.fills[axis]=0
 
     def get_save_structure(self):
         paths = []
