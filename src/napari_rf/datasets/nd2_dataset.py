@@ -6,6 +6,8 @@ class Nd2Dataset():
     def __init__(self, cfg):
 
         self.stack = nd2(cfg['dataset_path'])
+        self.normalise = cfg['normalise_img']
+
 
         if isinstance(cfg['positions'], ListConfig):
             self.positions = cfg['positions']
@@ -57,6 +59,9 @@ class Nd2Dataset():
                     paths.append(f'position_{m}/z_level_{z}/channel_{c}')
         return paths
 
+    def normalise_image(self, img):
+        return (img / 65535) - 0.5
+
     def __len__(self):
         return len(self.indices)
 
@@ -69,7 +74,10 @@ class Nd2Dataset():
         c = str(channel).zfill(self.fills['c'])
         t = str(frame).zfill(self.fills['t'])
 
-        return (img / 65535) - 0.5, f'position_{m}/z_level_{z}/channel_{c}/frame_{t}.tif'
+        if self.normalise:
+            img = self.normalise_image(img)
+
+        return img, f'position_{m}/z_level_{z}/channel_{c}/frame_{t}.tif'
 
     def __iter__(self):
         for i in range(len(self.indices)):
