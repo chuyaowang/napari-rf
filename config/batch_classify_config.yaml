@@ -1,7 +1,7 @@
-dataset_path: /media/philipp/honeycomb/20210224/20210224_exp_9
-classifier: {1: /home/philipp/PycharmProjects/classifiers/20210224_exp_9_channel_1_rf_classifier_3_classes, 2: /home/philipp/PycharmProjects/classifiers/20210224_exp_9_channel_2_rf_classifier_3_classes}
+dataset_path: /media/philipp/honeycomb/20210224/20210224_exp_9.nd2
+classifier: /home/philipp/PycharmProjects/classifiers/20210224_exp_9_channel_1_rf_classifier_3_classes
 frames: all
 positions: all
-z_levels: 0
-channels_to_segment: 2
+z_levels: all
+channels_to_segment: all
 normalise_img: False
