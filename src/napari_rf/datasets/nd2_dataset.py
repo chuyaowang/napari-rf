@@ -8,7 +8,6 @@ class Nd2Dataset():
         self.stack = nd2(cfg['dataset_path'])
         self.normalise = cfg['normalise_img']
 
-
         if isinstance(cfg['positions'], ListConfig):
             self.positions = cfg['positions']
         elif isinstance(cfg['positions'], int):
@@ -28,7 +27,10 @@ class Nd2Dataset():
         elif isinstance(cfg['z_levels'], int):
             self.z_levels = [cfg['z_levels']]
         else:
-            self.z_levels = list(range(self.stack.sizes['z']))
+            try:
+                self.z_levels = list(range(self.stack.sizes['z']))
+            except KeyError:
+                self.z_levels = [0]
 
         if isinstance(cfg['channels_to_segment'], ListConfig):
             self.channels = cfg['channels_to_segment']
