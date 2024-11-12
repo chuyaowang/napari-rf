@@ -1,6 +1,6 @@
 import os
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from typing import Optional
 from skimage import io
 import warnings
