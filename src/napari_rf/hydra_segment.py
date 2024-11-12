@@ -21,7 +21,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     for p in paths:
         os.makedirs(f"{working_dir}/{p}", exist_ok=True)
 
-    clf = load(cfg['classifier'].get(cfg['channels_to_segment']))
+    clf = load(cfg['classifier'])
     feature_creator = FeatureCreator()
 
     for img, save_path in tqdm(dataset):
