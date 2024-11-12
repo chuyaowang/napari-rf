@@ -25,7 +25,9 @@ def main(cfg: DictConfig) -> Optional[float]:
     feature_creator = FeatureCreator()
 
     for img, save_path in tqdm(dataset):
-        features = feature_creator.make_simple_features(img)
+        if not isinstance(img, list):
+            img = [img]
+        features = feature_creator.make_simple_features(*img)
         out = clf.predict_segmenter(features)
         io.imsave(f"{working_dir}/{save_path}", np.argmax(out, axis=0))
 
