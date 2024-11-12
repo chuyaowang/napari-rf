@@ -15,7 +15,11 @@ from tqdm import tqdm
 @hydra.main(version_base='1.2', config_path='../../config', config_name='batch_classify_config.yaml')
 def main(cfg: DictConfig) -> Optional[float]:
     working_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+
+    print('+', 50*'-', 'running', 50*'-', '+')
     print(working_dir)
+    print(OmegaConf.to_yaml(cfg))
+
     dataset = get_dataset(cfg)
     paths = dataset.get_save_structure()
     for p in paths:
