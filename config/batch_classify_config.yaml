@@ -3,5 +3,6 @@ classifier: /home/philipp/PycharmProjects/classifiers/20210224_exp_9_channel_1_r
 frames: all
 positions: all
 z_levels: all
-channels_to_segment: all
+channels_to_segment: [0, 1]
+return_channels_together: True
 normalise_img: False
