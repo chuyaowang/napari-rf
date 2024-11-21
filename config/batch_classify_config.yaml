@@ -1,8 +1,8 @@
-dataset_path: /media/philipp/honeycomb/20210224/20210224_exp_9.nd2
-classifier: /home/philipp/PycharmProjects/classifiers/20210224_exp_9_channel_1_rf_classifier_3_classes
-frames: all
-positions: all
-z_levels: all
-channels_to_segment: [0, 1]
-return_channels_together: True
+dataset_path: /media/philipp/honeycomb/cAMP/20180705/20180705_exp_1.nd2
+classifier: ???
+frames: 0
+positions: 0
+z_levels: 1
+channels_to_segment: 0
+return_channels_together: True # only implemented for ND2 stacks!
 normalise_img: False
