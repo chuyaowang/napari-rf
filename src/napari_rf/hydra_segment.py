@@ -4,6 +4,7 @@ from omegaconf import DictConfig, OmegaConf
 from typing import Optional
 from skimage import io
 import warnings
+
 warnings.filterwarnings('ignore')
 from napari_rf.datasets.datasets import get_dataset
 from napari_rf.features import FeatureCreator
@@ -16,7 +17,7 @@ from tqdm import tqdm
 def main(cfg: DictConfig) -> Optional[float]:
     working_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
-    print('+', 50*'-', 'running', 50*'-', '+')
+    print('+', 50 * '-', 'running', 50 * '-', '+')
     print(working_dir)
     print(OmegaConf.to_yaml(cfg))
 
