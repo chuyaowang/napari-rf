@@ -13,7 +13,6 @@ class FeatureCreator:
                                 intensity=True, edges=True, texture=True, sigma_min=1, sigma_max=16)
         all_features = []
         for img in imgs:
-            print(img.shape)
             features = features_func(img)
 
             gaussians = []
