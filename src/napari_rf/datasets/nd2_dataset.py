@@ -2,54 +2,56 @@ from omegaconf import ListConfig
 from pims import ND2_Reader as nd2
 
 
-class Nd2Dataset():
+class Nd2Dataset:
     def __init__(self, cfg):
 
-        self.stack = nd2(cfg['dataset_path'])
-        self.normalise = cfg['normalise_img']
+        self.stack = nd2(cfg["dataset_path"])
+        self.normalise = cfg["normalise_img"]
 
-        if isinstance(cfg['positions'], ListConfig):
-            self.positions = cfg['positions']
-        elif isinstance(cfg['positions'], int):
-            self.positions = [cfg['positions']]
+        if isinstance(cfg["positions"], ListConfig):
+            self.positions = cfg["positions"]
+        elif isinstance(cfg["positions"], int):
+            self.positions = [cfg["positions"]]
         else:
-            self.positions = list(range(self.stack.sizes['m']))
+            self.positions = list(range(self.stack.sizes["m"]))
 
-        if isinstance(cfg['frames'], ListConfig):
-            self.frames = cfg['frames']
-        elif isinstance(cfg['frames'], int):
-            self.frames = [cfg['frames']]
+        if isinstance(cfg["frames"], ListConfig):
+            self.frames = cfg["frames"]
+        elif isinstance(cfg["frames"], int):
+            self.frames = [cfg["frames"]]
         else:
-            self.frames = list(range(self.stack.sizes['t']))
+            self.frames = list(range(self.stack.sizes["t"]))
 
-        if isinstance(cfg['z_levels'], ListConfig):
-            self.z_levels = cfg['z_levels']
-        elif isinstance(cfg['z_levels'], int):
-            self.z_levels = [cfg['z_levels']]
+        if isinstance(cfg["z_levels"], ListConfig):
+            self.z_levels = cfg["z_levels"]
+        elif isinstance(cfg["z_levels"], int):
+            self.z_levels = [cfg["z_levels"]]
         else:
             try:
-                self.z_levels = list(range(self.stack.sizes['z']))
+                self.z_levels = list(range(self.stack.sizes["z"]))
             except KeyError:
                 self.z_levels = [0]
 
-        if isinstance(cfg['channels_to_segment'], ListConfig):
-            self.channels = cfg['channels_to_segment']
-        elif isinstance(cfg['channels_to_segment'], int):
-            self.channels = [cfg['channels_to_segment']]
+        if isinstance(cfg["channels_to_segment"], ListConfig):
+            self.channels = cfg["channels_to_segment"]
+        elif isinstance(cfg["channels_to_segment"], int):
+            self.channels = [cfg["channels_to_segment"]]
         else:
-            self.channels = list(range(self.stack.sizes['c']))
+            self.channels = list(range(self.stack.sizes["c"]))
 
         self.indices = []
         for position in self.positions:
             for z_level in self.z_levels:
                 for channel in self.channels:
                     for frame in self.frames:
-                        self.indices.append([position, z_level, channel, frame])
+                        self.indices.append(
+                            [position, z_level, channel, frame]
+                        )
 
         self.fills = {a: len(str(b)) for a, b in self.stack.sizes.items()}
-        for axis in 'zmctxy':
-            if not axis in self.fills:
-                self.fills[axis]=0
+        for axis in "zmctxy":
+            if axis not in self.fills:
+                self.fills[axis] = 0
 
     def get_save_structure(self):
         paths = []
@@ -57,11 +59,11 @@ class Nd2Dataset():
         for position in self.positions:
             for z_level in self.z_levels:
                 for channel in self.channels:
-                    m = str(position).zfill(self.fills['m'])
-                    z = str(z_level).zfill(self.fills['z'])
-                    c = str(channel).zfill(self.fills['c'])
+                    m = str(position).zfill(self.fills["m"])
+                    z = str(z_level).zfill(self.fills["z"])
+                    c = str(channel).zfill(self.fills["c"])
 
-                    paths.append(f'position_{m}/z_level_{z}/channel_{c}')
+                    paths.append(f"position_{m}/z_level_{z}/channel_{c}")
         return paths
 
     def normalise_image(self, img):
@@ -72,17 +74,19 @@ class Nd2Dataset():
 
     def __getitem__(self, index):
         [position, z_level, channel, frame] = self.indices[index]
-        img = self.stack.get_frame_2D(m=position, z=z_level, c=channel, t=frame)[:]
+        img = self.stack.get_frame_2D(
+            m=position, z=z_level, c=channel, t=frame
+        )[:]
 
-        m = str(position).zfill(self.fills['m'])
-        z = str(z_level).zfill(self.fills['z'])
-        c = str(channel).zfill(self.fills['c'])
-        t = str(frame).zfill(self.fills['t'])
+        m = str(position).zfill(self.fills["m"])
+        z = str(z_level).zfill(self.fills["z"])
+        c = str(channel).zfill(self.fills["c"])
+        t = str(frame).zfill(self.fills["t"])
 
         if self.normalise:
             img = self.normalise_image(img)
 
-        return img, f'position_{m}/z_level_{z}/channel_{c}/frame_{t}.tif'
+        return img, f"position_{m}/z_level_{z}/channel_{c}/frame_{t}.tif"
 
     def __iter__(self):
         for i in range(len(self.indices)):

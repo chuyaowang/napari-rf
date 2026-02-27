@@ -7,16 +7,18 @@ from napari_rf.datasets.single_image_dataset import SingleImageDataset
 
 
 def get_dataset(cfg):
-    if cfg['dataset_path'].lower().endswith('nd2'):
-        print('opening nd2 stack')
-        if not cfg['return_channels_together']:
+    if cfg["dataset_path"].lower().endswith("nd2"):
+        print("opening nd2 stack")
+        if not cfg["return_channels_together"]:
             return Nd2Dataset(cfg)
         else:
             return PooledNd2Dataset(cfg)
-    elif os.path.isdir(cfg['dataset_path']):
-        print('opening folders')
+    elif os.path.isdir(cfg["dataset_path"]):
+        print("opening folders")
         return FolderStructureDataset(cfg)
-    elif cfg['dataset_path'].upper().endswith('TIF') | cfg['dataset_path'].upper().endswith('TIFF'):
-        print('fetching single image')
+    elif cfg["dataset_path"].upper().endswith("TIF") | cfg[
+        "dataset_path"
+    ].upper().endswith("TIFF"):
+        print("fetching single image")
         return SingleImageDataset(cfg)
-    return ValueError('dataset not found')
+    return ValueError("dataset not found")

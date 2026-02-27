@@ -1,4 +1,6 @@
-import os, re
+import os
+import re
+
 
 def delete_empty_folders(root):
     deleted = set()
@@ -18,28 +20,27 @@ def delete_empty_folders(root):
     return deleted
 
 
-
-if __name__ == '__main__':
-    root = '/media/philipp/seagate5tb/hydra'
+if __name__ == "__main__":
+    root = "/media/philipp/seagate5tb/hydra"
 
     old_paths = []
-    p,c,t = [],[],[]
+    p, c, t = [], [], []
     for path, _, files in os.walk(root):
         for file in files:
-            if file.endswith('.tif'):
+            if file.endswith(".tif"):
                 old_path = f"{path}/{file}"
                 old_paths.append(old_path)
-                p.append(re.findall('position_(\d+)',old_path))
-                c.append(re.findall('channel_(\d+)',old_path))
-                t.append(re.findall('frame_(\d+)',old_path))
+                p.append(re.findall(r"position_(\d+)", old_path))
+                c.append(re.findall(r"channel_(\d+)", old_path))
+                t.append(re.findall(r"frame_(\d+)", old_path))
     p_fill = max([len(str(int(match[0]))) for match in p if match])
     c_fill = max([len(str(int(match[0]))) for match in c if match])
     t_fill = max([len(str(int(match[0]))) for match in t if match])
 
     for old_path in old_paths:
-        p = str(int(re.findall('position_(\d+)', old_path)[0]))
-        c = str(int(re.findall('channel_(\d+)', old_path)[0]))
-        t = str(int(re.findall('frame_(\d+)', old_path)[0]))
+        p = str(int(re.findall(r"position_(\d+)", old_path)[0]))
+        c = str(int(re.findall(r"channel_(\d+)", old_path)[0]))
+        t = str(int(re.findall(r"frame_(\d+)", old_path)[0]))
 
         new_dir = f"{root}/dataset/position_{p.zfill(p_fill)}/channel_{c.zfill(c_fill)}/"
         os.makedirs(new_dir, exist_ok=True)
@@ -48,4 +49,3 @@ if __name__ == '__main__':
         os.replace(old_path, new_path)
 
     delete_empty_folders(root)
-

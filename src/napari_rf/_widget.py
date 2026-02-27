@@ -1,16 +1,14 @@
 """
 """
+
 from typing import TYPE_CHECKING
 
-from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget
-from qtpy.QtWidgets import QFileDialog
-
 import numpy as np
+from joblib import dump, load
+from qtpy.QtWidgets import QFileDialog, QPushButton, QVBoxLayout, QWidget
 
-from joblib import load, dump
-
-from napari_rf.RF import RF
 from napari_rf.features import FeatureCreator
+from napari_rf.RF import RF
 
 if TYPE_CHECKING:
     import napari
@@ -53,40 +51,38 @@ class RFWidget(QWidget):
     def create_features(self):
         img = self.viewer.layers.selection.active.data
         features = self.feature_creator.make_simple_features(img)
-        self.viewer.add_image(np.moveaxis(features, -1, 0), name='features')
+        self.viewer.add_image(np.moveaxis(features, -1, 0), name="features")
 
     def train(self):
-        if 'Labels' in self.viewer.layers:
-            training_labels = self.viewer.layers['Labels'].data
+        if "Labels" in self.viewer.layers:
+            training_labels = self.viewer.layers["Labels"].data
         else:
-            raise Exception('training labels must be in a layer called "Labels"')
+            raise Exception(
+                'training labels must be in a layer called "Labels"'
+            )
 
-        if not 'features' in self.viewer.layers:
+        if "features" not in self.viewer.layers:
             self.create_features()
 
-        features = np.moveaxis(self.viewer.layers['features'].data, 0, -1)
+        features = np.moveaxis(self.viewer.layers["features"].data, 0, -1)
 
         result = self.clf.train(training_labels, features)
 
         self.btn_save.setDisabled(False)
         self.btn_apply_rf.setDisabled(False)
 
-        self.viewer.add_image(result, name=f'segmentation probabilities')
-
+        self.viewer.add_image(result, name="segmentation probabilities")
 
     def apply_rf(self):
-        if not 'features' in self.viewer.layers:
+        if "features" not in self.viewer.layers:
             self.create_features()
-        features = np.moveaxis(self.viewer.layers['features'].data, 0, -1)
+        features = np.moveaxis(self.viewer.layers["features"].data, 0, -1)
         result = self.clf.predict_segmenter(features)
-        self.viewer.add_image(result, name=f'segmentation probabilities')
+        self.viewer.add_image(result, name="segmentation probabilities")
 
     def load(self):
         source_file = QFileDialog.getOpenFileName(
-            self,
-            'open classifier',
-            '/home/philipp/',
-            'classifiers (*.joblib)'
+            self, "open classifier", "/home/philipp/", "classifiers (*.joblib)"
         )
         self.clf = load(source_file[0])
         print(f"loaded {source_file[0]}")
@@ -95,10 +91,7 @@ class RFWidget(QWidget):
 
     def save(self):
         save_path = QFileDialog.getSaveFileName(
-            self,
-            'save file',
-            '',
-            'all files (*)'
+            self, "save file", "", "all files (*)"
         )
         if self.clf is not None:
             dump(self.clf, save_path[0])
