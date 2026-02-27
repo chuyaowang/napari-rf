@@ -12,7 +12,7 @@ The primary interface. It handles:
 
 ### 2. `FeatureCreator` (`src/napari_rf/features.py`)
 This class encapsulates the feature engineering pipeline.
-- **`make_simple_features(*imgs)`**: 
+- **`make_simple_features(*imgs)`**:
     - Uses `skimage.feature.multiscale_basic_features`.
     - Adds custom Sobel filters, Gaussian differences, and Laplacian of Gaussian (LoG).
     - Returns a concatenated multi-channel `numpy` array.

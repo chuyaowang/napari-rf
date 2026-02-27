@@ -1,14 +1,16 @@
+import numpy as np
 from skimage import future
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.exceptions import NotFittedError
-import numpy as np
+
 
 class RF:
 
     def __init__(self, clf=None):
         if clf is None:
-            self.clf = RandomForestClassifier(n_estimators=50, n_jobs=-1,
-                                     max_depth=100, max_samples=0.05)
+            self.clf = RandomForestClassifier(
+                n_estimators=50, n_jobs=-1, max_depth=100, max_samples=0.05
+            )
         else:
             self.clf = clf
 
@@ -19,8 +21,6 @@ class RF:
         self.clf = future.fit_segmenter(training_labels, features, self.clf)
 
         return self.predict_segmenter(features)
-
-
 
     def predict_segmenter(self, features):
         """
@@ -58,10 +58,14 @@ class RF:
                 "for example with the `fit_segmenter` function."
             )
         except ValueError as err:
-            if err.args and 'x must consist of vectors of length' in err.args[0]:
+            if (
+                err.args
+                and "x must consist of vectors of length" in err.args[0]
+            ):
                 raise ValueError(
-                    err.args[0] + '\n' +
-                    "Maybe you did not use the same type of features for training the classifier."
+                    err.args[0]
+                    + "\n"
+                    + "Maybe you did not use the same type of features for training the classifier."
                 )
             else:
                 raise err
@@ -74,5 +78,5 @@ class RF:
             output = predicted_labels.reshape(s)
             output = np.rollaxis(output, 2, 0)
         else:
-            raise ValueError('shape mismatch')
+            raise ValueError("shape mismatch")
         return output

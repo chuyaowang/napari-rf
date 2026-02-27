@@ -1,7 +1,9 @@
-from skimage import feature
-from skimage.filters import gaussian, sobel, laplace
 from functools import partial
+
 import numpy as np
+from skimage import feature
+from skimage.filters import gaussian, laplace, sobel
+
 
 class FeatureCreator:
     def __init__(self):
@@ -9,8 +11,14 @@ class FeatureCreator:
 
     def make_simple_features(self, *imgs):
 
-        features_func = partial(feature.multiscale_basic_features,
-                                intensity=True, edges=True, texture=True, sigma_min=1, sigma_max=16)
+        features_func = partial(
+            feature.multiscale_basic_features,
+            intensity=True,
+            edges=True,
+            texture=True,
+            sigma_min=1,
+            sigma_max=16,
+        )
         all_features = []
         for img in imgs:
             features = features_func(img)
@@ -21,6 +29,17 @@ class FeatureCreator:
 
             sob = sobel(img)[..., np.newaxis]
             log = laplace(gaussian(img, 10))[..., np.newaxis]
-            all_features.append(np.concatenate([img[..., np.newaxis], features, sob, gaussians[1] - gaussians[0], log], axis=-1))
+            all_features.append(
+                np.concatenate(
+                    [
+                        img[..., np.newaxis],
+                        features,
+                        sob,
+                        gaussians[1] - gaussians[0],
+                        log,
+                    ],
+                    axis=-1,
+                )
+            )
 
         return np.concatenate(all_features, axis=-1)
