@@ -1,0 +1,7 @@
+# @package _global_
+dataset_path: /media/philipp/honeycomb/20210224/20210224_exp_9.nd2
+classifier: /home/philipp/PycharmProjects/classifiers/20210224_exp_9_channel_0_1_2_composite_4_classes
+frames: all
+positions: all
+channels_to_segment: [0, 1, 2]
+return_channels_together: True

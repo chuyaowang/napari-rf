@@ -1,0 +1,4 @@
+dataset_path: /media/philipp/honeycomb/20210224/20210224_exp_9.nd2
+classifier: /home/philipp/PycharmProjects/classifiers/20210224_exp_9_channel_2_rf_classifier_3_classes
+positions: [0,1,2,3,4,5,6,7,8]
+channels_to_segment: 2

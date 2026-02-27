@@ -34,7 +34,7 @@ def main(cfg: DictConfig) -> Optional[float]:
             img = [img]
         features = feature_creator.make_simple_features(*img)
         out = clf.predict_segmenter(features)
-        io.imsave(f"{working_dir}/{save_path}", np.argmax(out, axis=0))
+        io.imsave(f"{working_dir}/{save_path}", np.argmax(out, axis=0).astype('float16'))
 
 
 if __name__ == "__main__":
