@@ -23,6 +23,7 @@ class RFWidget(QWidget):
 
         self.clf = RF()
         self.feature_creator = FeatureCreator()
+        self.features = None
 
         self.btn_create_features = QPushButton("create features")
         self.btn_create_features.clicked.connect(self.create_features)
@@ -50,8 +51,8 @@ class RFWidget(QWidget):
 
     def create_features(self):
         img = self.viewer.layers.selection.active.data
-        features = self.feature_creator.make_simple_features(img)
-        self.viewer.add_image(np.moveaxis(features, -1, 0), name="features")
+        self.features = self.feature_creator.make_simple_features(img)
+        self.viewer.add_image(np.moveaxis(self.features, -1, 0), name="features")
 
     def train(self):
         if "Labels" in self.viewer.layers:
@@ -61,12 +62,16 @@ class RFWidget(QWidget):
                 'training labels must be in a layer called "Labels"'
             )
 
-        if "features" not in self.viewer.layers:
+        if self.features is None:
             self.create_features()
 
-        features = np.moveaxis(self.viewer.layers["features"].data, 0, -1)
+        # Check if labels are 3D (Z, Y, X) but features are 2D (Y, X, C)
+        # This happens if the Labels layer was created based on the Features layer shape.
+        if training_labels.ndim == 3 and self.features.ndim == 3:
+            if training_labels.shape[0] == self.features.shape[-1]:
+                training_labels = np.max(training_labels, axis=0)
 
-        result = self.clf.train(training_labels, features)
+        result = self.clf.train(training_labels, self.features)
 
         self.btn_save.setDisabled(False)
         self.btn_apply_rf.setDisabled(False)
@@ -74,10 +79,9 @@ class RFWidget(QWidget):
         self.viewer.add_image(result, name="segmentation probabilities")
 
     def apply_rf(self):
-        if "features" not in self.viewer.layers:
+        if self.features is None:
             self.create_features()
-        features = np.moveaxis(self.viewer.layers["features"].data, 0, -1)
-        result = self.clf.predict_segmenter(features)
+        result = self.clf.predict_segmenter(self.features)
         self.viewer.add_image(result, name="segmentation probabilities")
 
     def load(self):
