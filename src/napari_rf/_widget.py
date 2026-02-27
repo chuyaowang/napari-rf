@@ -91,7 +91,7 @@ class RFWidget(QWidget):
 
     def save(self):
         save_path = QFileDialog.getSaveFileName(
-            self, "save file", "", "all files (*)"
+            self, "save file", "classifier.joblib", "classifiers (*.joblib)"
         )
         if self.clf is not None:
             dump(self.clf, save_path[0])
