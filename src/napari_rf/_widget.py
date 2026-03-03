@@ -9,6 +9,8 @@ from qtpy.QtWidgets import QFileDialog, QPushButton, QVBoxLayout, QWidget
 
 from napari_rf.features import FeatureCreator
 from napari_rf.RF import RF
+from napari.qt.threading import thread_worker
+from napari.utils import progress
 
 if TYPE_CHECKING:
     import napari
@@ -51,8 +53,40 @@ class RFWidget(QWidget):
 
     def create_features(self):
         img = self.viewer.layers.selection.active.data
-        self.features = self.feature_creator.make_simple_features(img)
-        self.viewer.add_image(np.moveaxis(self.features, -1, 0), name="features")
+        
+        self.btn_create_features.setEnabled(False)
+        self.btn_create_features.setText("Creating features...")
+
+        # Initialize progress bar on main thread
+        pbar = progress(desc="Creating Features")
+
+        @thread_worker
+        def _create_features_worker():
+            # The creator now yields progress info or the final result
+            gen = self.feature_creator.make_simple_features(img)
+            for val in gen:
+                yield val
+
+        def _on_yielded(val):
+            if isinstance(val, tuple):
+                step, total, desc = val
+                pbar.total = total
+                pbar.set_description(desc)
+                pbar.update(1)
+            else:
+                # Final result (the features array)
+                self.features = val
+                self.viewer.add_image(np.moveaxis(self.features, -1, 0), name="features")
+
+        def _on_finished():
+            pbar.close()
+            self.btn_create_features.setEnabled(True)
+            self.btn_create_features.setText("create features")
+
+        worker = _create_features_worker()
+        worker.yielded.connect(_on_yielded)
+        worker.finished.connect(_on_finished)
+        worker.start()
 
     def train(self):
         if "Labels" in self.viewer.layers:
