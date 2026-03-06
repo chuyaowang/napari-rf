@@ -31,10 +31,12 @@ class RFWidget(QWidget):
         self.image_path = None
         self.image_name = "image"
         self._last_processed_layer = None
+        self._clf_ready = False
 
         # Layer Selection Drop-down
         self.layer_combo = QComboBox()
         self.layer_combo.setToolTip("Select the image layer to use for training and prediction.")
+        self.layer_combo.currentIndexChanged.connect(self._on_layer_change)
         
         self.btn_train = QPushButton("Train Random Forest")
         self.btn_train.setToolTip("Train the classifier using the 'Labels' and features from the selected image.")
@@ -58,9 +60,21 @@ class RFWidget(QWidget):
         self.btn_save_labels.setToolTip("Save the manually drawn labels as a TIFF file in a subfolder.")
         self.btn_save_labels.clicked.connect(self.save_labels)
 
+        # 2D Save button
         self.btn_save_preds = QPushButton("Save Predictions")
-        self.btn_save_preds.setToolTip("Save predicted class labels and probability maps as TIFF files in a subfolder.")
+        self.btn_save_preds.setToolTip("Save predicted class labels and probability maps.")
         self.btn_save_preds.clicked.connect(self.save_predictions)
+
+        # 3D Specific Save buttons
+        self.btn_save_training_preds = QPushButton("Save Training Predictions")
+        self.btn_save_training_preds.clicked.connect(self.save_training_predictions)
+        self.btn_save_full_preds = QPushButton("Save Full Stack Predictions")
+        self.btn_save_full_preds.clicked.connect(self.save_predictions)
+
+        # Reset All button
+        self.btn_reset = QPushButton("Reset All")
+        self.btn_reset.setToolTip("Reset internal model, features, and caches to original state.")
+        self.btn_reset.clicked.connect(self.reset_all)
 
         self.setLayout(QVBoxLayout())
         self.layout().addWidget(QLabel("Select Image Layer:"))
@@ -71,6 +85,9 @@ class RFWidget(QWidget):
         self.layout().addWidget(self.btn_save)
         self.layout().addWidget(self.btn_save_labels)
         self.layout().addWidget(self.btn_save_preds)
+        self.layout().addWidget(self.btn_save_training_preds)
+        self.layout().addWidget(self.btn_save_full_preds)
+        self.layout().addWidget(self.btn_reset)
 
         # Connect to layer events to manage UI state
         self.viewer.layers.events.inserted.connect(self._on_layer_change)
@@ -80,28 +97,67 @@ class RFWidget(QWidget):
     def _on_layer_change(self, event=None):
         """Update the layer combo box and save button states."""
         import napari
+        
         # 1. Update the Drop-down
         current_selection = self.layer_combo.currentText()
+        self.layer_combo.blockSignals(True)
         self.layer_combo.clear()
-        
         image_layers = [
             l.name for l in self.viewer.layers 
             if isinstance(l, napari.layers.Image) 
-            and l.name not in ["Features", "Segmentation Probabilities"]
+            and not any(x in l.name for x in ["Features", "Probabilities"])
         ]
         self.layer_combo.addItems(image_layers)
-        
-        # Restore selection if it still exists
         if current_selection in image_layers:
             self.layer_combo.setCurrentText(current_selection)
         elif image_layers:
             self.layer_combo.setCurrentIndex(0)
+        self.layer_combo.blockSignals(False)
 
-        # 2. Update button states
+        # 2. Detect dimensionality
+        active_layer = self.get_selected_layer()
+        is_3d = active_layer is not None and active_layer.data.ndim == 3
+        
+        # 3. Dynamic UI Renaming and Visibility
+        if is_3d:
+            self.btn_apply_rf.setText("Apply RF to All Slices")
+            self.btn_save_preds.setVisible(False)
+            self.btn_save_training_preds.setVisible(True)
+            self.btn_save_full_preds.setVisible(True)
+        else:
+            self.btn_apply_rf.setText("Apply Random Forest")
+            self.btn_save_preds.setVisible(True)
+            self.btn_save_training_preds.setVisible(False)
+            self.btn_save_full_preds.setVisible(False)
+
+        # 4. Enable/Disable logic
+        has_layers = active_layer is not None
         has_labels = "Labels" in self.viewer.layers
-        self.btn_train.setEnabled(has_labels)
+        
+        self.btn_train.setEnabled(has_labels and has_layers)
         self.btn_save_labels.setEnabled(has_labels)
-        self.btn_save_preds.setEnabled("Segmentation Probabilities" in self.viewer.layers)
+        # Apply button only enabled if a model exists AND there's an image to apply it to
+        self.btn_apply_rf.setEnabled(self._clf_ready and has_layers)
+        
+        # Detect multi-channel layers
+        has_full_preds = any("Segmentation Probabilities" in l.name for l in self.viewer.layers)
+        has_train_preds = any("Training Probabilities" in l.name for l in self.viewer.layers)
+        
+        self.btn_save_preds.setEnabled(has_full_preds)
+        self.btn_save_training_preds.setEnabled(has_train_preds)
+        self.btn_save_full_preds.setEnabled(has_full_preds)
+
+    def reset_all(self):
+        """Reset internal state to default."""
+        self.clf = RF()
+        self.features = None
+        self.image_path = None
+        self.image_name = "image"
+        self._last_processed_layer = None
+        self._clf_ready = False
+        self.btn_save.setDisabled(True)
+        self._on_layer_change()
+        print("Internal model and feature caches have been reset.")
 
     def get_selected_layer(self):
         """Returns the napari layer selected in the drop-down."""
@@ -111,24 +167,11 @@ class RFWidget(QWidget):
         return None
 
     def create_features(self, callback=None, indices=None):
-        """
-        Modified to work as a silent background task triggered by Train/Apply.
-        Calls 'callback' with the features when finished.
-        
-        Parameters
-        ----------
-        callback : callable, optional
-            Function to call when feature generation is complete.
-        indices : list of int, optional
-            Specific slices to process for 3D stacks.
-        """
         active_layer = self.get_selected_layer()
         if active_layer is None:
             return
         
         img = active_layer.data
-        
-        # Track image metadata
         self.image_path = getattr(active_layer, "source", None)
         if self.image_path:
             self.image_path = getattr(self.image_path, "path", None)
@@ -139,7 +182,6 @@ class RFWidget(QWidget):
         self.btn_train.setEnabled(False)
         self.btn_apply_rf.setEnabled(False)
 
-        # Initialize progress bar on main thread
         pbar = progress(desc="Generating Features")
 
         @thread_worker
@@ -155,14 +197,9 @@ class RFWidget(QWidget):
                 pbar.set_description(desc)
                 pbar.update(1)
             else:
-                # Cache results and update the display (2D or last slice only)
                 self.features = val
                 self._last_processed_layer = active_layer
-                
-                # Display logic: If indices were used, 'val' is (len(indices), Y, X, C)
-                # We display the last processed slice of the set.
                 display_feats = self.features[-1] if self.features.ndim == 4 else self.features
-                
                 if "Features" in self.viewer.layers:
                     self.viewer.layers["Features"].data = np.moveaxis(display_feats, -1, 0)
                 else:
@@ -170,8 +207,7 @@ class RFWidget(QWidget):
 
         def _on_finished():
             pbar.close()
-            self.btn_train.setEnabled(True)
-            self.btn_apply_rf.setEnabled(True)
+            self._on_layer_change()
             if callback:
                 callback()
 
@@ -181,118 +217,112 @@ class RFWidget(QWidget):
         worker.start()
 
     def train(self):
-        if "Labels" not in self.viewer.layers:
-            raise Exception('training labels must be in a layer called "Labels"')
-        
         active_layer = self.get_selected_layer()
-        if active_layer is None:
+        if active_layer is None or "Labels" not in self.viewer.layers:
             return
 
         training_labels = self.viewer.layers["Labels"].data
-        indices = None
+        is_3d = active_layer.data.ndim == 3
+        
+        # Robust Dimensionality Handling:
+        # Handle labels created matching the 'Features' layer (multi-channel)
+        # instead of the source Image layer.
+        if not is_3d and training_labels.ndim == 3:
+            # 2D image but labels are (C, Y, X)
+            training_labels = np.max(training_labels, axis=0)
+        elif is_3d and training_labels.ndim == 4:
+            # 3D stack but labels are (Z, C, Y, X)
+            training_labels = np.max(training_labels, axis=1)
 
-        # 3D Memory Efficiency: Find labeled slices
-        if training_labels.ndim == 3:
-            # Find indices where at least one pixel is labeled (> 0)
+        indices = None
+        if is_3d:
             indices = np.where(np.any(training_labels > 0, axis=(1, 2)))[0].tolist()
             if not indices:
-                print("No labels found in any slice. Please draw labels first.")
+                print("No labels found. Please draw labels first.")
                 return
-            print(f"Training on {len(indices)} labeled slices: {indices}")
 
         def _do_train():
-            labels = self.viewer.layers["Labels"].data
-            if indices is not None:
-                # Filter labels to match the generated feature slices
+            # Use the corrected labels (filtered for 3D sparse)
+            labels = training_labels
+            if is_3d:
                 labels = labels[indices]
 
+            # RF returns (C, Z, Y, X) for 3D or (C, Y, X) for 2D
             result = self.clf.train(labels, self.features)
-            self.btn_save.setDisabled(False)
-            self.btn_apply_rf.setDisabled(False)
+            self._clf_ready = True
+            self.btn_save.setEnabled(True)
             
-            # If 3D, result will be probabilities for the labeled slices.
-            # We add it as a new layer.
-            self.viewer.add_image(result, name="Segmentation Probabilities (Training Result)")
+            if is_3d:
+                # Transpose to (Z, C, Y, X) for composed 3D display
+                result = np.moveaxis(result, 0, 1)
+                layer_name = "Training Probabilities"
+            else:
+                layer_name = "Segmentation Probabilities"
+            
+            if layer_name in self.viewer.layers:
+                self.viewer.layers.remove(layer_name)
+            self.viewer.add_image(result, name=layer_name)
+            
+            if not is_3d:
+                self.apply_rf()
+            else:
+                self._on_layer_change()
 
-        # For training, we ALWAYS regenerate features for the specific labeled slices
-        # to ensure memory efficiency and correct label alignment.
         self.create_features(callback=_do_train, indices=indices)
 
     def apply_rf(self):
         active_layer = self.get_selected_layer()
-        if active_layer is None:
+        if active_layer is None or not self._clf_ready:
             return
         
         img = active_layer.data
+        is_3d = img.ndim == 3
         self.btn_train.setEnabled(False)
         self.btn_apply_rf.setEnabled(False)
 
-        # Initialize progress bar on main thread
         pbar = progress(desc="Applying Random Forest")
 
         @thread_worker
         def _apply_rf_worker():
-            if img.ndim == 3:
-                # 3D: Slice-by-slice inference
+            if is_3d:
                 total_slices = img.shape[0]
                 results_buffer = None
-                
                 for z in range(total_slices):
-                    # 1. Generate features for one slice
-                    # Note: We consume the generator directly here for speed
                     gen = self.feature_creator.make_simple_features(img, indices=[z])
                     for val in gen:
                         if isinstance(val, tuple):
-                            step, total, desc = val
-                            # Update global progress: each slice is (z/total_slices) + (val_step/val_total)/total_slices
-                            yield (z, total_slices, f"Slice {z+1}/{total_slices}: {desc}")
+                            yield (z, total_slices, f"Slice {z+1}/{total_slices}: {val[2]}")
                         else:
-                            # Features for one slice: shape is (1, Y, X, C)
                             feats = val
                     
-                    # 2. Predict for one slice
-                    prob_slice = self.clf.predict_segmenter(feats) # (C, Y, X)
-                    
-                    # 3. Initialize buffer on first slice
+                    prob_slice = self.clf.predict_segmenter(feats)
                     if results_buffer is None:
-                        num_classes = prob_slice.shape[0]
-                        results_buffer = np.zeros((num_classes, total_slices, *img.shape[1:]), dtype=np.float32)
-                    
-                    results_buffer[:, z] = prob_slice
-                    
-                    # 4. Cache the last slice's features for display
+                        results_buffer = np.zeros((total_slices, prob_slice.shape[0], *img.shape[1:]), dtype=np.float32)
+                    results_buffer[z] = prob_slice[:, 0]
                     if z == total_slices - 1:
                         self.features = feats
-                        self._last_processed_layer = active_layer
-                
                 yield results_buffer
             else:
-                # 2D: Standard inference
-                # Ensure we have features first
-                if self.features is None or self._last_processed_layer != active_layer:
+                if self.features is None or self._last_processed_layer != active_layer or self.features.ndim == 4:
                     gen = self.feature_creator.make_simple_features(img)
                     for val in gen:
-                        if isinstance(val, tuple):
-                            yield (0, 1, val[2])
-                        else:
-                            self.features = val
-                            self._last_processed_layer = active_layer
-                
-                yield (0, 1, "Predicting...")
+                        if isinstance(val, tuple): yield (0, 1, val[2])
+                        else: self.features = val
                 yield self.clf.predict_segmenter(self.features)
 
         def _on_yielded(val):
             if isinstance(val, tuple):
                 z, total, desc = val
-                pbar.total = total
-                pbar.n = z
+                pbar.total, pbar.n = total, z
                 pbar.set_description(desc)
                 pbar.refresh()
             else:
-                # Result is the final probability stack/image
-                self.viewer.add_image(val, name="Segmentation Probabilities")
-                
-                # Update Features layer with the last slice's features
+                layer_name = "Segmentation Probabilities"
+                if layer_name in self.viewer.layers:
+                    self.viewer.layers.remove(layer_name)
+                self.viewer.add_image(val, name=layer_name)
+
+                # Update Features layer
                 display_feats = self.features[-1] if self.features.ndim == 4 else self.features
                 if "Features" in self.viewer.layers:
                     self.viewer.layers["Features"].data = np.moveaxis(display_feats, -1, 0)
@@ -301,8 +331,7 @@ class RFWidget(QWidget):
 
         def _on_finished():
             pbar.close()
-            self.btn_train.setEnabled(True)
-            self.btn_apply_rf.setEnabled(True)
+            self._on_layer_change()
 
         worker = _apply_rf_worker()
         worker.yielded.connect(_on_yielded)
@@ -310,65 +339,52 @@ class RFWidget(QWidget):
         worker.start()
 
     def load(self):
-        source_file = QFileDialog.getOpenFileName(
-            self, "Open Classifier", "/home/philipp/", "classifiers (*.joblib)"
-        )
+        source_file = QFileDialog.getOpenFileName(self, "Open Classifier", "", "classifiers (*.joblib)")
         if source_file[0]:
             self.clf = load(source_file[0])
-            print(f"Loaded {source_file[0]}")
-            self.btn_save.setDisabled(False)
-            self.btn_apply_rf.setDisabled(False)
+            self._clf_ready = True
+            self.btn_save.setEnabled(True)
+            self._on_layer_change()
 
     def save(self):
-        save_path = QFileDialog.getSaveFileName(
-            self, "Save File", "classifier.joblib", "classifiers (*.joblib)"
-        )
+        save_path = QFileDialog.getSaveFileName(self, "Save File", "classifier.joblib", "classifiers (*.joblib)")
         if self.clf is not None and save_path[0]:
             dump(self.clf, save_path[0])
 
     def _get_save_dir(self):
-        """Create and return a subfolder named after the image."""
         if self.image_path:
-            parent = Path(self.image_path).parent
-            save_dir = parent / self.image_name
+            save_dir = Path(self.image_path).parent / self.image_name
         else:
             save_dir = Path.home() / self.image_name
-        
         save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir
 
     def save_labels(self):
-        if "Labels" not in self.viewer.layers:
-            print("No 'Labels' layer found.")
-            return
-        
-        labels = self.viewer.layers["Labels"].data
-        save_dir = self._get_save_dir()
-        save_name = f"{self.image_name}_labels.tif"
-        save_path = save_dir / save_name
-        
-        # Using uint8 for labels is sufficient and reduces low-contrast warnings
-        imsave(str(save_path), labels.astype(np.uint8), check_contrast=False)
-        print(f"Saved labels to {save_path}")
+        if "Labels" in self.viewer.layers:
+            labels = self.viewer.layers["Labels"].data
+            # Re-apply dimensionality handling before saving
+            is_3d = self.get_selected_layer() is not None and self.get_selected_layer().data.ndim == 3
+            if not is_3d and labels.ndim == 3:
+                labels = np.max(labels, axis=0)
+            elif is_3d and labels.ndim == 4:
+                labels = np.max(labels, axis=1)
+                
+            save_path = self._get_save_dir() / f"{self.image_name}_labels.tif"
+            imsave(str(save_path), labels.astype(np.uint8), check_contrast=False)
 
     def save_predictions(self):
-        if "Segmentation Probabilities" not in self.viewer.layers:
-            print("No 'Segmentation Probabilities' layer found.")
-            return
-            
-        probs = self.viewer.layers["Segmentation Probabilities"].data
-        # probs shape is (C, Y, X) or (C, Z, Y, X)
-        # class labels are the argmax over channel dimension (axis 0)
-        class_labels = np.argmax(probs, axis=0).astype(np.uint8)
-        
+        self._save_layer_stack("Segmentation Probabilities", "full")
+
+    def save_training_predictions(self):
+        self._save_layer_stack("Training Probabilities", "training")
+
+    def _save_layer_stack(self, base_name, suffix):
+        layers = [l for l in self.viewer.layers if base_name in l.name]
+        if not layers: return
+        probs = layers[0].data
+        argmax_axis = 1 if probs.ndim == 4 else 0
+        class_labels = np.argmax(probs, axis=argmax_axis).astype(np.uint8)
         save_dir = self._get_save_dir()
-        
-        # Save class labels as uint8
-        labels_path = save_dir / f"{self.image_name}_predictions_class.tif"
-        imsave(str(labels_path), class_labels, check_contrast=False)
-        
-        # Save probabilities as float32
-        probs_path = save_dir / f"{self.image_name}_predictions_probs.tif"
-        imsave(str(probs_path), probs.astype(np.float32), check_contrast=False)
-        
-        print(f"Saved predictions to {save_dir}")
+        imsave(str(save_dir / f"{self.image_name}_{suffix}_class.tif"), class_labels, check_contrast=False)
+        imsave(str(save_dir / f"{self.image_name}_{suffix}_probs.tif"), probs.astype(np.float32), check_contrast=False)
+        print(f"Saved {suffix} predictions to {save_dir}")
