@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from joblib import dump, load
-from qtpy.QtWidgets import QFileDialog, QPushButton, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QComboBox, QLabel, QFileDialog, QPushButton, QVBoxLayout, QWidget
 from skimage.io import imsave
 
 from napari_rf.features import FeatureCreator
@@ -30,17 +30,18 @@ class RFWidget(QWidget):
         self.features = None
         self.image_path = None
         self.image_name = "image"
+        self._last_processed_layer = None
 
-        self.btn_create_features = QPushButton("Create Features")
-        self.btn_create_features.setToolTip("Extract multiscale features (intensity, edges, texture) from the active image layer.")
-        self.btn_create_features.clicked.connect(self.create_features)
-
+        # Layer Selection Drop-down
+        self.layer_combo = QComboBox()
+        self.layer_combo.setToolTip("Select the image layer to use for training and prediction.")
+        
         self.btn_train = QPushButton("Train Random Forest")
-        self.btn_train.setToolTip("Train the classifier using the 'Labels' and 'Features' layers.")
+        self.btn_train.setToolTip("Train the classifier using the 'Labels' and features from the selected image.")
         self.btn_train.clicked.connect(self.train)
 
         self.btn_apply_rf = QPushButton("Apply Random Forest")
-        self.btn_apply_rf.setToolTip("Apply the current classifier to the 'Features' layer.")
+        self.btn_apply_rf.setToolTip("Apply the current classifier to the selected image stack.")
         self.btn_apply_rf.clicked.connect(self.apply_rf)
         self.btn_apply_rf.setDisabled(True)
 
@@ -62,7 +63,8 @@ class RFWidget(QWidget):
         self.btn_save_preds.clicked.connect(self.save_predictions)
 
         self.setLayout(QVBoxLayout())
-        self.layout().addWidget(self.btn_create_features)
+        self.layout().addWidget(QLabel("Select Image Layer:"))
+        self.layout().addWidget(self.layer_combo)
         self.layout().addWidget(self.btn_train)
         self.layout().addWidget(self.btn_apply_rf)
         self.layout().addWidget(self.btn_load)
@@ -70,24 +72,56 @@ class RFWidget(QWidget):
         self.layout().addWidget(self.btn_save_labels)
         self.layout().addWidget(self.btn_save_preds)
 
-        # Connect to layer events to manage Save button states
-        self.viewer.layers.events.inserted.connect(self._update_button_states)
-        self.viewer.layers.events.removed.connect(self._update_button_states)
-        self._update_button_states()
+        # Connect to layer events to manage UI state
+        self.viewer.layers.events.inserted.connect(self._on_layer_change)
+        self.viewer.layers.events.removed.connect(self._on_layer_change)
+        self._on_layer_change()
 
-    def _update_button_states(self, event=None):
-        """Enable/disable save buttons based on layer existence."""
-        self.btn_save_labels.setEnabled("Labels" in self.viewer.layers)
+    def _on_layer_change(self, event=None):
+        """Update the layer combo box and save button states."""
+        import napari
+        # 1. Update the Drop-down
+        current_selection = self.layer_combo.currentText()
+        self.layer_combo.clear()
+        
+        image_layers = [
+            l.name for l in self.viewer.layers 
+            if isinstance(l, napari.layers.Image) 
+            and l.name not in ["Features", "Segmentation Probabilities"]
+        ]
+        self.layer_combo.addItems(image_layers)
+        
+        # Restore selection if it still exists
+        if current_selection in image_layers:
+            self.layer_combo.setCurrentText(current_selection)
+        elif image_layers:
+            self.layer_combo.setCurrentIndex(0)
+
+        # 2. Update button states
+        has_labels = "Labels" in self.viewer.layers
+        self.btn_train.setEnabled(has_labels)
+        self.btn_save_labels.setEnabled(has_labels)
         self.btn_save_preds.setEnabled("Segmentation Probabilities" in self.viewer.layers)
 
-    def create_features(self):
-        active_layer = self.viewer.layers.selection.active
+    def get_selected_layer(self):
+        """Returns the napari layer selected in the drop-down."""
+        layer_name = self.layer_combo.currentText()
+        if layer_name in self.viewer.layers:
+            return self.viewer.layers[layer_name]
+        return None
+
+    def create_features(self, callback=None):
+        """
+        Modified to work as a silent background task triggered by Train/Apply.
+        Calls 'callback' with the features when finished.
+        """
+        active_layer = self.get_selected_layer()
         if active_layer is None:
             return
         
         img = active_layer.data
         
-        # Track image path and clean name (stem)
+        # Track image metadata
         self.image_path = getattr(active_layer, "source", None)
         if self.image_path:
             self.image_path = getattr(self.image_path, "path", None)
@@ -95,15 +129,14 @@ class RFWidget(QWidget):
         else:
             self.image_name = active_layer.name
         
-        self.btn_create_features.setEnabled(False)
-        self.btn_create_features.setText("Creating Features...")
+        self.btn_train.setEnabled(False)
+        self.btn_apply_rf.setEnabled(False)
 
         # Initialize progress bar on main thread
-        pbar = progress(desc="Creating Features")
+        pbar = progress(desc="Generating Features")
 
         @thread_worker
         def _create_features_worker():
-            # The creator now yields progress info or the final result
             gen = self.feature_creator.make_simple_features(img)
             for val in gen:
                 yield val
@@ -115,14 +148,19 @@ class RFWidget(QWidget):
                 pbar.set_description(desc)
                 pbar.update(1)
             else:
-                # Final result (the features array)
+                # Cache results and update the display (2D or last slice only)
                 self.features = val
-                self.viewer.add_image(np.moveaxis(self.features, -1, 0), name="Features")
+                self._last_processed_layer = active_layer
+                # Display only the last slice if 3D
+                display_feats = self.features[-1] if self.features.ndim == 4 else self.features
+                self.viewer.add_image(np.moveaxis(display_feats, -1, 0), name="Features")
 
         def _on_finished():
             pbar.close()
-            self.btn_create_features.setEnabled(True)
-            self.btn_create_features.setText("Create Features")
+            self.btn_train.setEnabled(True)
+            self.btn_apply_rf.setEnabled(True)
+            if callback:
+                callback()
 
         worker = _create_features_worker()
         worker.yielded.connect(_on_yielded)
@@ -130,34 +168,46 @@ class RFWidget(QWidget):
         worker.start()
 
     def train(self):
-        if "Labels" in self.viewer.layers:
+        if "Labels" not in self.viewer.layers:
+            raise Exception('training labels must be in a layer called "Labels"')
+        
+        active_layer = self.get_selected_layer()
+        if active_layer is None:
+            return
+
+        def _do_train():
             training_labels = self.viewer.layers["Labels"].data
+            
+            # Dimensionality handling
+            if training_labels.ndim == 3 and self.features.ndim == 3:
+                if training_labels.shape[0] == self.features.shape[-1]:
+                    training_labels = np.max(training_labels, axis=0)
+
+            result = self.clf.train(training_labels, self.features)
+            self.btn_save.setDisabled(False)
+            self.btn_apply_rf.setDisabled(False)
+            self.viewer.add_image(result, name="Segmentation Probabilities")
+
+        # Check if we need to regenerate features
+        if self.features is None or self._last_processed_layer != active_layer:
+            self.create_features(callback=_do_train)
         else:
-            raise Exception(
-                'training labels must be in a layer called "Labels"'
-            )
-
-        if self.features is None:
-            self.create_features()
-
-        # Check if labels are 3D (Z, Y, X) but features are 2D (Y, X, C)
-        # This happens if the Labels layer was created based on the Features layer shape.
-        if training_labels.ndim == 3 and self.features.ndim == 3:
-            if training_labels.shape[0] == self.features.shape[-1]:
-                training_labels = np.max(training_labels, axis=0)
-
-        result = self.clf.train(training_labels, self.features)
-
-        self.btn_save.setDisabled(False)
-        self.btn_apply_rf.setDisabled(False)
-
-        self.viewer.add_image(result, name="Segmentation Probabilities")
+            _do_train()
 
     def apply_rf(self):
-        if self.features is None:
-            self.create_features()
-        result = self.clf.predict_segmenter(self.features)
-        self.viewer.add_image(result, name="Segmentation Probabilities")
+        active_layer = self.get_selected_layer()
+        if active_layer is None:
+            return
+
+        def _do_apply():
+            result = self.clf.predict_segmenter(self.features)
+            self.viewer.add_image(result, name="Segmentation Probabilities")
+
+        # Check if we need to regenerate features
+        if self.features is None or self._last_processed_layer != active_layer:
+            self.create_features(callback=_do_apply)
+        else:
+            _do_apply()
 
     def load(self):
         source_file = QFileDialog.getOpenFileName(
