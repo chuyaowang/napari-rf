@@ -177,11 +177,6 @@ class RFWidget(QWidget):
 
         def _do_train():
             training_labels = self.viewer.layers["Labels"].data
-            
-            # Dimensionality handling
-            if training_labels.ndim == 3 and self.features.ndim == 3:
-                if training_labels.shape[0] == self.features.shape[-1]:
-                    training_labels = np.max(training_labels, axis=0)
 
             result = self.clf.train(training_labels, self.features)
             self.btn_save.setDisabled(False)
