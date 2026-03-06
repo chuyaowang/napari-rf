@@ -14,10 +14,18 @@ class FeatureCreator:
     def __init__(self):
         pass
 
-    def make_simple_features(self, *imgs):
+    def make_simple_features(self, *imgs, indices=None):
         """
         Generator that yields (current_step, total_steps, description) 
         and finally yields the concatenated features array.
+        
+        Parameters
+        ----------
+        *imgs : ndarray
+            One or more image arrays (2D or 3D).
+        indices : list of int, optional
+            For 3D images, only generate features for these specific slice indices.
+            If None, all slices are processed.
         """
         # Multiscale basic features (intensity, edges, texture)
         msbf = partial(
@@ -33,12 +41,18 @@ class FeatureCreator:
         
         # Calculate total steps for progress reporting
         # Steps per slice: normalize (1) + 6 feature types = 7
-        total_slices = sum(img.shape[0] if img.ndim == 3 else 1 for img in imgs)
+        total_slices = 0
+        for img in imgs:
+            if img.ndim == 3:
+                total_slices += len(indices) if indices is not None else img.shape[0]
+            else:
+                total_slices += 1
+                
         total_steps = total_slices * 7
         current_step = 0
 
         for img_idx, img in enumerate(imgs):
-            # Step 1: Normalize
+            # Step 1: Normalize (always on the full image/stack for consistency)
             v_min, v_max = np.percentile(img, (0.5, 99.5))
             img_norm = np.clip((img - v_min) / (v_max - v_min + 1e-8), 0, 1)
 
@@ -104,7 +118,9 @@ class FeatureCreator:
 
             if img_norm.ndim == 3:
                 stack_feats = []
-                for z in range(img_norm.shape[0]):
+                target_indices = indices if indices is not None else range(img_norm.shape[0])
+                
+                for i, z in enumerate(target_indices):
                     # Normalize step for this slice (implicit in total_steps)
                     current_step += 1
                     yield (current_step, total_steps, f"Slice {z+1}/{img_norm.shape[0]}: Normalizing")

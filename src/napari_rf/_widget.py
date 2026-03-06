@@ -110,10 +110,17 @@ class RFWidget(QWidget):
             return self.viewer.layers[layer_name]
         return None
 
-    def create_features(self, callback=None):
+    def create_features(self, callback=None, indices=None):
         """
         Modified to work as a silent background task triggered by Train/Apply.
         Calls 'callback' with the features when finished.
+        
+        Parameters
+        ----------
+        callback : callable, optional
+            Function to call when feature generation is complete.
+        indices : list of int, optional
+            Specific slices to process for 3D stacks.
         """
         active_layer = self.get_selected_layer()
         if active_layer is None:
@@ -137,7 +144,7 @@ class RFWidget(QWidget):
 
         @thread_worker
         def _create_features_worker():
-            gen = self.feature_creator.make_simple_features(img)
+            gen = self.feature_creator.make_simple_features(img, indices=indices)
             for val in gen:
                 yield val
 
@@ -151,9 +158,15 @@ class RFWidget(QWidget):
                 # Cache results and update the display (2D or last slice only)
                 self.features = val
                 self._last_processed_layer = active_layer
-                # Display only the last slice if 3D
+                
+                # Display logic: If indices were used, 'val' is (len(indices), Y, X, C)
+                # We display the last processed slice of the set.
                 display_feats = self.features[-1] if self.features.ndim == 4 else self.features
-                self.viewer.add_image(np.moveaxis(display_feats, -1, 0), name="Features")
+                
+                if "Features" in self.viewer.layers:
+                    self.viewer.layers["Features"].data = np.moveaxis(display_feats, -1, 0)
+                else:
+                    self.viewer.add_image(np.moveaxis(display_feats, -1, 0), name="Features")
 
         def _on_finished():
             pbar.close()
@@ -175,34 +188,126 @@ class RFWidget(QWidget):
         if active_layer is None:
             return
 
-        def _do_train():
-            training_labels = self.viewer.layers["Labels"].data
+        training_labels = self.viewer.layers["Labels"].data
+        indices = None
 
-            result = self.clf.train(training_labels, self.features)
+        # 3D Memory Efficiency: Find labeled slices
+        if training_labels.ndim == 3:
+            # Find indices where at least one pixel is labeled (> 0)
+            indices = np.where(np.any(training_labels > 0, axis=(1, 2)))[0].tolist()
+            if not indices:
+                print("No labels found in any slice. Please draw labels first.")
+                return
+            print(f"Training on {len(indices)} labeled slices: {indices}")
+
+        def _do_train():
+            labels = self.viewer.layers["Labels"].data
+            if indices is not None:
+                # Filter labels to match the generated feature slices
+                labels = labels[indices]
+
+            result = self.clf.train(labels, self.features)
             self.btn_save.setDisabled(False)
             self.btn_apply_rf.setDisabled(False)
-            self.viewer.add_image(result, name="Segmentation Probabilities")
+            
+            # If 3D, result will be probabilities for the labeled slices.
+            # We add it as a new layer.
+            self.viewer.add_image(result, name="Segmentation Probabilities (Training Result)")
 
-        # Check if we need to regenerate features
-        if self.features is None or self._last_processed_layer != active_layer:
-            self.create_features(callback=_do_train)
-        else:
-            _do_train()
+        # For training, we ALWAYS regenerate features for the specific labeled slices
+        # to ensure memory efficiency and correct label alignment.
+        self.create_features(callback=_do_train, indices=indices)
 
     def apply_rf(self):
         active_layer = self.get_selected_layer()
         if active_layer is None:
             return
+        
+        img = active_layer.data
+        self.btn_train.setEnabled(False)
+        self.btn_apply_rf.setEnabled(False)
 
-        def _do_apply():
-            result = self.clf.predict_segmenter(self.features)
-            self.viewer.add_image(result, name="Segmentation Probabilities")
+        # Initialize progress bar on main thread
+        pbar = progress(desc="Applying Random Forest")
 
-        # Check if we need to regenerate features
-        if self.features is None or self._last_processed_layer != active_layer:
-            self.create_features(callback=_do_apply)
-        else:
-            _do_apply()
+        @thread_worker
+        def _apply_rf_worker():
+            if img.ndim == 3:
+                # 3D: Slice-by-slice inference
+                total_slices = img.shape[0]
+                results_buffer = None
+                
+                for z in range(total_slices):
+                    # 1. Generate features for one slice
+                    # Note: We consume the generator directly here for speed
+                    gen = self.feature_creator.make_simple_features(img, indices=[z])
+                    for val in gen:
+                        if isinstance(val, tuple):
+                            step, total, desc = val
+                            # Update global progress: each slice is (z/total_slices) + (val_step/val_total)/total_slices
+                            yield (z, total_slices, f"Slice {z+1}/{total_slices}: {desc}")
+                        else:
+                            # Features for one slice: shape is (1, Y, X, C)
+                            feats = val
+                    
+                    # 2. Predict for one slice
+                    prob_slice = self.clf.predict_segmenter(feats) # (C, Y, X)
+                    
+                    # 3. Initialize buffer on first slice
+                    if results_buffer is None:
+                        num_classes = prob_slice.shape[0]
+                        results_buffer = np.zeros((num_classes, total_slices, *img.shape[1:]), dtype=np.float32)
+                    
+                    results_buffer[:, z] = prob_slice
+                    
+                    # 4. Cache the last slice's features for display
+                    if z == total_slices - 1:
+                        self.features = feats
+                        self._last_processed_layer = active_layer
+                
+                yield results_buffer
+            else:
+                # 2D: Standard inference
+                # Ensure we have features first
+                if self.features is None or self._last_processed_layer != active_layer:
+                    gen = self.feature_creator.make_simple_features(img)
+                    for val in gen:
+                        if isinstance(val, tuple):
+                            yield (0, 1, val[2])
+                        else:
+                            self.features = val
+                            self._last_processed_layer = active_layer
+                
+                yield (0, 1, "Predicting...")
+                yield self.clf.predict_segmenter(self.features)
+
+        def _on_yielded(val):
+            if isinstance(val, tuple):
+                z, total, desc = val
+                pbar.total = total
+                pbar.n = z
+                pbar.set_description(desc)
+                pbar.refresh()
+            else:
+                # Result is the final probability stack/image
+                self.viewer.add_image(val, name="Segmentation Probabilities")
+                
+                # Update Features layer with the last slice's features
+                display_feats = self.features[-1] if self.features.ndim == 4 else self.features
+                if "Features" in self.viewer.layers:
+                    self.viewer.layers["Features"].data = np.moveaxis(display_feats, -1, 0)
+                else:
+                    self.viewer.add_image(np.moveaxis(display_feats, -1, 0), name="Features")
+
+        def _on_finished():
+            pbar.close()
+            self.btn_train.setEnabled(True)
+            self.btn_apply_rf.setEnabled(True)
+
+        worker = _apply_rf_worker()
+        worker.yielded.connect(_on_yielded)
+        worker.finished.connect(_on_finished)
+        worker.start()
 
     def load(self):
         source_file = QFileDialog.getOpenFileName(
