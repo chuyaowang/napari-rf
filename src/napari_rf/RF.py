@@ -76,7 +76,7 @@ class RF:
             feature_dim = predicted_labels.shape[-1]
             s = list(sh[:-1]) + [feature_dim]
             output = predicted_labels.reshape(s)
-            output = np.rollaxis(output, 2, 0)
+            output = np.moveaxis(output, -1, 0)
         else:
             raise ValueError("shape mismatch")
         return output
