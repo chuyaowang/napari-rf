@@ -1,51 +1,54 @@
 # Architecture
 
-The `napari-rf` plugin follows a decoupled design where the GUI logic, feature engineering, and machine learning models are separated into distinct modules.
+The `napari-rf` plugin follows a decoupled design where the GUI logic, feature engineering, and machine learning models are separated into distinct modules. It is specifically engineered for memory efficiency, allowing it to process large 3D stacks that exceed available RAM via slice-wise execution.
 
 ## Component Overview
 
 ### 1. `RFWidget` (`src/napari_rf/_widget.py`)
-The primary interface. It handles:
-- **Asynchronous Execution**: Uses `napari.qt.threading.thread_worker` to run long-running tasks (feature extraction) in background threads, keeping the GUI responsive.
-- **Progress Reporting**: Listens to generator yields from the feature extraction thread to update a `napari.utils.progress` bar on the main thread.
-- **State Management**: Keeps track of the `RF` model instance, `FeatureCreator`, and the active image's metadata (path, name) for smart saving.
-- **Event Handling**: Connects QT buttons to processing logic and manages button enablement by listening to napari's `layers.events`.
+The central controller managing state and user interaction.
+- **On-Demand Execution**: Feature extraction is auto-triggered by training or inference tasks, eliminating redundant steps.
+- **Asynchronous Execution**: Uses `napari.qt.threading.thread_worker` to keep the UI responsive during heavy computation.
+- **Memory Management**: Orchestrates a "Generate -> Predict -> Buffer" loop for 3D data, processing one slice at a time.
+- **State Management**: Tracks model readiness (`_clf_ready`), active layer metadata, and manages persistent `RF` and `FeatureCreator` instances.
+- **Event Handling**: Synchronizes the layer selection drop-down and button states with napari's layer events.
 
 ### 2. `FeatureCreator` (`src/napari_rf/features.py`)
-This class encapsulates a generator-based feature engineering pipeline.
-- **Generator Model**: `make_simple_features` yields step-by-step progress info, allowing real-time feedback in the UI.
+A generator-based feature engineering engine.
+- **Sparse Generation**: Can extract features for specific slice indices (e.g., only labeled slices for 3D training), significantly reducing RAM usage.
 - **Advanced Pipeline**:
-    - **Normalization**: Pre-processes images using 0.5% - 99.5% percentile scaling for lighting/exposure robust extraction.
-    - **Feature Stack**:
-        - Original intensity.
-        - Multiscale basic features (texture, edges) via `skimage`.
-        - Local standard deviation.
-        - Difference of Gaussians (DoG) for blob/edge detection.
-        - Hessian Determinant (blobness) at multiple scales.
-        - Shape index.
-        - Local Binary Pattern (LBP) for robust texture classification.
-- **3D Handling**: Stacks (3D images) are processed slice-by-slice to maintain a consistent feature representation and prevent memory overflows.
+    - **Normalization**: Percentile-based (0.5%-99.5%) scaling for robustness.
+    - **Feature Stack**: Original intensity, Multiscale texture/edges, Local std dev, DoG, Hessian Determinant, Shape index, and LBP.
+- **Progress Monitoring**: Yields real-time step information to the UI activity bar.
 
 ### 3. `RF` (`src/napari_rf/RF.py`)
 A wrapper around `sklearn.ensemble.RandomForestClassifier`.
-- **Training**: Uses `skimage.future.fit_segmenter` which allows training on sparse label arrays (where 0 indicates unlabelled pixels).
-- **Prediction**: Optimized for image stacks. It reshapes the input feature blocks into vectors for `scikit-learn` and then reshapes the results back into image dimensions.
+- **Sparse Training**: Leverages `skimage.future.fit_segmenter` to train on sparse label arrays (0-padded).
+- **Flexible Inference**: Optimized for both single 2D slices and full 3D volumes, returning multi-channel probability maps.
 
 ## Data Flow Diagram
 
 ```mermaid
 graph TD
-    A[Image Layer] -->|FeatureCreator Generator| B(Features Layer)
+    A[Selected Image Layer] -->|indices| B{FeatureCreator}
+    B -->|Silent Trigger| C(Train RF)
     B -->|Progress Signals| G[Napari Activity Dock]
-    B -->|RF.train| D{Trained Model}
-    C[Labels Layer] -->|RF.train| D
-    B -->|RF.predict| E[Segmentation Probabilities]
-    D -->|joblib.dump| F[(.joblib File)]
-    C -->|Save Labels| H[(Subfolder: image_labels.tif)]
-    E -->|Save Predictions| I[(Subfolder: image_predictions.tif)]
+    
+    L[Labels Layer] -->|Auto-Projection| C
+    C -->|Labeled Slices Only| TP[Training Probabilities]
+    
+    C -->|Model Ready| D{RF Model}
+    
+    A -->|Slice-by-Slice| E{Full Inference Loop}
+    D --> E
+    E -->|Incremental Buffer| SP[Segmentation Probabilities]
+    
+    TP -->|Save Training| H[(..._training_class.tif)]
+    SP -->|Save Full| I[(..._full_class.tif)]
+    D -->|Save Classifier| J[(model.joblib)]
 ```
 
 ## Key Decisions
-- **Thread Safety**: All UI updates (progress bars, layer additions) occur on the main thread via Qt signals, while heavy computation happens in background threads.
-- **Relative Saving**: Results are saved relative to the input image file's directory to maintain organization across large datasets.
-- **Data Optimization**: Labels are saved as `uint8` to save space and avoid low-contrast warnings in downstream processing.
+- **Memory Efficiency**: Slice-wise inference ensures the plugin can handle datasets of arbitrary depth without memory overflows.
+- **Label Robustness**: Multi-channel labels (often created accidentally on feature layers) are automatically projected back to spatial dimensions (`np.max`) before use.
+- **Thread Safety**: All UI updates and layer additions are signaled back to the main thread to avoid Qt threading violations.
+- **Organization**: Export logic maintains a strict hierarchy: `<parent>/<image_name>/<results>`.
