@@ -1,40 +1,51 @@
 # API Reference
 
 ## `napari_rf.RF`
-The core machine learning wrapper.
+Core machine learning logic.
 
 ### `RF(clf=None)`
-- **`train(training_labels, features)`**: Trains the classifier. `training_labels` can be sparse.
-- **`predict_segmenter(features)`**: Returns class probabilities for the input features.
+- **`train(training_labels, features)`**: Fits the classifier to the provided data. Supports sparse labels.
+- **`predict_segmenter(features)`**: Generates a probability map (C, Y, X) for the input features.
 
 ---
 
 ## `napari_rf.features.FeatureCreator`
-Logic for image-to-feature transformations.
+Generator-based feature extraction.
 
 ### `make_simple_features(*imgs)`
-- Generates a stack of features including:
-    - Original intensity
-    - Multiscale basic features (texture, edges)
-    - Sobel filters
-    - Difference of Gaussians
-    - Laplacian of Gaussian
+A **generator** function that yields progress updates.
+- **Yields**: 
+    - `(current_step, total_steps, description)` for progress monitoring.
+    - Final `numpy.ndarray` (C, Y, X) containing the full feature stack.
+- **Extracted Features**:
+    - **Intensity**: Normalized original image.
+    - **Structure**: Multiscale texture and edge features (skimage).
+    - **Local Variance**: Local standard deviation (sigma=3).
+    - **Blobs/Edges**: Difference of Gaussians (scales: 1-3, 3-5, 5-8).
+    - **Curvature**: Hessian Determinant (sigma=1, 3) and Shape Index.
+    - **Texture**: Local Binary Patterns (LBP).
 
 ---
 
 ## `napari_rf.RFWidget`
-The Qt-based GUI for napari.
+The Qt GUI for napari.
 
-### Methods
-- `create_features()`: Triggers feature extraction on the active layer.
-- `train()`: Orchestrates the training process using the 'Labels' and 'features' layers.
-- `apply_rf()`: Runs prediction on the active layer.
-- `save()` / `load()`: Serializes the `RF` object using `joblib`.
+### Primary Methods
+- `create_features()`: Launches a `thread_worker` to run the feature extraction generator and updates the activity bar.
+- `train()`: Orchestrates the training process. Automatically handles 2D label layer to 3D feature layer alignment.
+- `apply_rf()`: Applies the trained model to generate a "Segmentation Probabilities" layer.
+- `save_labels()` / `save_predictions()`: Export work to TIFF files in an image-specific subfolder.
+- `save()` / `load()`: Serializes/Deserializes the `RF` model instance via `joblib`.
+
+### State Management
+- `self.clf`: The active `RF` instance.
+- `self.features`: Cache for extracted features.
+- `self.image_path` / `self.image_name`: Metadata for the source image, used for automated file saving.
 
 ---
 
 ## Data Modules (`src/napari_rf/datasets/`)
-Specialized classes for handling different data formats:
-- `nd2_dataset.py`: Nikon ND2 file support.
-- `folder_structure_dataset.py`: Handles images organized in directories.
-- `single_image_dataset.py`: Simple 2D/3D image wrapper.
+Specialized loaders:
+- `nd2_dataset.py`: Nikon ND2 support.
+- `folder_structure_dataset.py`: Batch directory processing.
+- `single_image_dataset.py`: General image wrapper.
