@@ -42,17 +42,26 @@ A **generator** function that yields progress updates.
 The Qt GUI interface for napari.
 
 ### Primary Methods
-- `create_features(callback=None, indices=None)`: Launches background extraction. Triggers `callback` upon completion.
+- `create_features(callback=None, slice_indices=None, feature_type="prediction")`: 
+    - Launches background extraction. 
+    - `feature_type`: `"training"` (sparse multi-slice) or `"prediction"` (single plane or 2D).
 - `train()`: Orchestrates training. For 3D, detects labeled slices and generates sparse features.
-- `apply_rf()`: Performs inference. For 3D, uses a slice-by-slice loop to conserve RAM.
-- `save_labels()` / `save_predictions()`: Exports results to `<image_dir>/<image_name>/`.
-- `reset_all()`: Resets model instance and internal feature caches.
+- `apply_rf()`: Performs inference. For 3D, uses a hybrid slice-by-slice loop (reuses training features).
+- `save_labels()` / `save_predictions()`: Exports results pull from `image_states`.
+- `reset_all()`: Resets model instance and clears all `image_states`.
 
 ### State Management
 - `self.clf`: The active `RF` instance.
-- `self.features`: Cache for the last processed set of features.
+- `self.image_states`: `Dict[Layer, Dict]` holding:
+    - `data`: Raw numpy data.
+    - `name` / `path`: Metadata.
+    - `labeled_slices`: List of indices.
+    - `training_features`: Cache for sparse training data.
+    - `prediction_features`: Cache for current inference slice.
+    - `training_probabilities`: Cached probability maps from training.
+    - `prediction_probabilities`: Cached probability maps from full stack inference.
 - `self._clf_ready`: Indicates if the model is ready for inference.
-- `self._last_processed_layer`: Reference to the source layer for the current features.
+- `self._current_image`: Tracks the currently selected image layer for switch-detection.
 
 ---
 

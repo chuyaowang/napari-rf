@@ -9,8 +9,8 @@ The central controller managing state and user interaction.
 - **On-Demand Execution**: Feature extraction is auto-triggered by training or inference tasks, eliminating redundant steps.
 - **Asynchronous Execution**: Uses `napari.qt.threading.thread_worker` to keep the UI responsive during heavy computation.
 - **Memory Management**: Orchestrates a "Generate -> Predict -> Buffer" loop for 3D data, processing one slice at a time.
-- **State Management**: Tracks model readiness (`_clf_ready`), active layer metadata, and manages persistent `RF` and `FeatureCreator` instances.
-- **Event Handling**: Synchronizes the layer selection drop-down and button states with napari's layer events.
+- **State Management**: Uses a centralized `image_states` dictionary to track data, metadata, and caches per image. This replaces shape-based logic and ensures features and probabilities are correctly mapped to their source images.
+- **Event Handling**: Synchronizes the layer selection drop-down and button states with napari's layer events, maintaining selection stability during viewer updates.
 
 ### 2. `FeatureCreator` (`src/napari_rf/features.py`)
 A generator-based feature engineering engine.
@@ -29,7 +29,7 @@ A wrapper around `sklearn.ensemble.RandomForestClassifier`.
 
 ```mermaid
 graph TD
-    A[Selected Image Layer] -->|indices| B{FeatureCreator}
+    A[Selected Image Layer] -->|image_states| B{FeatureCreator}
     B -->|Silent Trigger| C(Train RF)
     B -->|Progress Signals| G[Napari Activity Dock]
     
@@ -38,8 +38,9 @@ graph TD
     
     C -->|Model Ready| D{RF Model}
     
-    A -->|Slice-by-Slice| E{Full Inference Loop}
+    A -->|Hybrid Slice-wise| E{Full Inference Loop}
     D --> E
+    E -->|Reuse Sparse Features| E
     E -->|Incremental Buffer| SP[Segmentation Probabilities]
     
     TP -->|Save Training| H[(..._training_class.tif)]
@@ -48,7 +49,8 @@ graph TD
 ```
 
 ## Key Decisions
-- **Memory Efficiency**: Slice-wise inference ensures the plugin can handle datasets of arbitrary depth without memory overflows.
+- **Explicit State Management**: The `image_states` dictionary provides a reliable record for each image, preventing cross-contamination of feature caches when switching between 2D and 3D datasets.
+- **Memory Efficiency**: Slice-wise inference ensures the plugin can handle datasets of arbitrary depth without memory overflows. A hybrid logic reuses training features for labeled slices during full-stack prediction.
 - **Label Robustness**: Multi-channel labels (often created accidentally on feature layers) are automatically projected back to spatial dimensions (`np.max`) before use.
 - **Thread Safety**: All UI updates and layer additions are signaled back to the main thread to avoid Qt threading violations.
 - **Organization**: Export logic maintains a strict hierarchy: `<parent>/<image_name>/<results>`.
