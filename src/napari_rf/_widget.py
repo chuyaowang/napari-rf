@@ -347,9 +347,13 @@ class RFWidget(QWidget):
             self._on_layer_change()
 
     def save(self):
-        save_path = QFileDialog.getSaveFileName(self, "Save File", "classifier.joblib", "classifiers (*.joblib)")
+        default_path = str(self._get_save_dir() / "classifier.joblib")
+        save_path = QFileDialog.getSaveFileName(
+            self, "Save File", default_path, "classifiers (*.joblib)"
+        )
         if self.clf is not None and save_path[0]:
             dump(self.clf, save_path[0])
+
 
     def _get_save_dir(self):
         if self.image_path:
