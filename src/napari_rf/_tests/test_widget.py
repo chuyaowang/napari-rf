@@ -1,66 +1,53 @@
 import numpy as np
+import pytest
+from napari_rf._widget import RFWidget
 
-from napari_rf._widget import (
-    ExampleQWidget,
-    ImageThreshold,
-    threshold_autogenerate_widget,
-    threshold_magic_widget,
-)
-
-
-def test_threshold_autogenerate_widget():
-    # because our "widget" is a pure function, we can call it and
-    # test it independently of napari
-    im_data = np.random.random((100, 100))
-    thresholded = threshold_autogenerate_widget(im_data, 0.5)
-    assert thresholded.shape == im_data.shape
-    # etc.
-
-
-# make_napari_viewer is a pytest fixture that returns a napari viewer object
-# you don't need to import it, as long as napari is installed
-# in your testing environment
-def test_threshold_magic_widget(make_napari_viewer):
+def test_rf_widget_init(make_napari_viewer):
     viewer = make_napari_viewer()
-    layer = viewer.add_image(np.random.random((100, 100)))
+    widget = RFWidget(viewer)
+    assert widget.viewer == viewer
+    assert widget.layer_combo.count() == 0
+    assert len(widget.image_states) == 0
 
-    # our widget will be a MagicFactory or FunctionGui instance
-    my_widget = threshold_magic_widget()
-
-    # if we "call" this object, it'll execute our function
-    thresholded = my_widget(viewer.layers[0], 0.5)
-    assert thresholded.shape == layer.data.shape
-    # etc.
-
-
-def test_image_threshold_widget(make_napari_viewer):
+def test_rf_widget_layer_sync(make_napari_viewer):
     viewer = make_napari_viewer()
-    layer = viewer.add_image(np.random.random((100, 100)))
-    my_widget = ImageThreshold(viewer)
+    widget = RFWidget(viewer)
+    
+    # Add an image layer
+    viewer.add_image(np.random.random((10, 10)), name="test_image")
+    assert widget.layer_combo.count() == 1
+    assert widget.layer_combo.currentText() == "test_image"
+    # Current image is initialized upon layer change via _on_layer_change()
+    assert any(l.name == "test_image" for l in widget.image_states.keys())
+    
+    # Add another image
+    viewer.add_image(np.random.random((10, 10)), name="another_image")
+    assert widget.layer_combo.count() == 2
+    
+    # Remove a layer
+    viewer.layers.remove("test_image")
+    assert widget.layer_combo.count() == 1
+    assert widget.layer_combo.currentText() == "another_image"
 
-    # because we saved our widgets as attributes of the container
-    # we can set their values without having to "interact" with the viewer
-    my_widget._image_layer_combo.value = layer
-    my_widget._threshold_slider.value = 0.5
-
-    # this allows us to run our functions directly and ensure
-    # correct results
-    my_widget._threshold_im()
-    assert len(viewer.layers) == 2
-
-
-# capsys is a pytest fixture that captures stdout and stderr output streams
-def test_example_q_widget(make_napari_viewer, capsys):
-    # make viewer and add an image layer using our fixture
+def test_rf_widget_reset(make_napari_viewer):
     viewer = make_napari_viewer()
-    viewer.add_image(np.random.random((100, 100)))
+    widget = RFWidget(viewer)
+    
+    viewer.add_image(np.random.random((10, 10)), name="image")
+    assert len(widget.image_states) == 1
+    
+    widget.reset_all()
+    assert len(widget.image_states) == 0
+    assert widget._current_image is None
 
-    # create our widget, passing in the viewer
-    my_widget = ExampleQWidget(viewer)
-
-    # call our widget method
-    my_widget._on_click()
-
-    # read captured output and check that it's as we expected
-    captured = capsys.readouterr()
-    assert captured.out == "napari has 1 layers\n"
+def test_init_image_state(make_napari_viewer):
+    viewer = make_napari_viewer()
+    widget = RFWidget(viewer)
+    
+    img = viewer.add_image(np.random.random((10, 10)), name="test")
+    # Triggered automatically by _on_layer_change via dropdown event
+    assert img in widget.image_states
+    state = widget.image_states[img]
+    assert state["name"] == "test"
+    assert state["ndim"] == 2
+    assert state["training_features"] is None
