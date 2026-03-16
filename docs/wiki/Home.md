@@ -16,3 +16,4 @@
 
 ---
 *Maintained by the napari-rf team. Last updated: February 2026.*
+\n<!-- Last sync: 2026年 03月 16日 星期一 18:20:51 CET -->
