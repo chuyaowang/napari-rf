@@ -57,7 +57,27 @@ The plugin automatically creates subfolders named after your image for organized
     - `..._probs.tif`: The raw multi-channel probability map (`float32`).
 - **Smart Directory Handling**: Files are saved into a subfolder named after your image, located in the same directory as the original image file.
 
-### 6. Maintenance
+### 6. Batch Training
+
+The plugin comes with a command-line script to automate training a model from multiple annotated 2D or 3D images. 
+
+**Folder Structure Requirement**:
+- Original Image: `parent_folder/image_name.tif`
+- Label Image: `parent_folder/image_name/*label*.tif`
+
+**Usage**:
+Once `napari-rf` is installed, you can call the script from the terminal:
+```bash
+napari-rf-batch-train /path/to/your/parent_folder
+```
+Optional: Set the output model name:
+```bash
+napari-rf-batch-train /path/to/your/parent_folder --output custom_model.joblib
+```
+
+The script will automatically detect whether each image is 2D or 3D, and for 3D stacks, it will efficiently extract features only for the slices that contain manual annotations before training the final aggregated Random Forest model.
+
+### 7. Maintenance
 - **Features Layer**: Shows the last processed feature stack (2D representation) to keep the workspace clean and RAM usage low.
 - **Reset All**: Clears internal model, feature caches, and resets the UI to its initial state.
 

@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from joblib import dump
@@ -60,23 +61,27 @@ def find_image_and_label(subfolder: Path) -> tuple[Path, Path]:
     return image_path, label_path
 
 
-def extract_features_for_image(image: np.ndarray, feature_creator: FeatureCreator) -> np.ndarray:
+def extract_features_for_image(image: np.ndarray, feature_creator: FeatureCreator, indices: Optional[list[int]] = None) -> np.ndarray:
     """
-    Extracts features for a given 2D image using the provided FeatureCreator.
+    Extracts features for a given 2D or 3D image using the provided FeatureCreator.
 
     Parameters
     ----------
     image : np.ndarray
-        The 2D intensity image.
+        The 2D or 3D intensity image.
     feature_creator : FeatureCreator
         The initialized FeatureCreator instance from napari-rf.
+    indices : list of int, optional
+        For 3D images, only generate features for these specific slice indices.
+        If None, all slices are processed.
 
     Returns
     -------
     np.ndarray
-        The computed feature array of shape (Y, X, F), where F is the number of features.
+        The computed feature array of shape (Y, X, F) for 2D or (Z_subset, Y, X, F) for 3D,
+        where F is the number of features.
     """
-    gen = feature_creator.make_simple_features(image)
+    gen = feature_creator.make_simple_features(image, indices=indices)
     features = None
     for val in gen:
         # The generator yields progress tuples, and finally the feature array
@@ -89,6 +94,8 @@ def batch_train_models(parent_folder: str | Path, output_filename: str = "batch_
     """
     Iterates through subdirectories of the parent folder, loads the corresponding 
     original images and labels, extracts features, and trains a Random Forest model.
+    Handles both 2D images and 3D stacks seamlessly. For 3D stacks, it selectively 
+    extracts features only for the slices that have been labeled by the user to save memory.
 
     The model is then saved as a .joblib file in the parent folder.
 
@@ -134,22 +141,38 @@ def batch_train_models(parent_folder: str | Path, output_filename: str = "batch_
         if img.shape != lbl.shape:
             print(f"  -> Warning: Shape mismatch. Image: {img.shape}, Label: {lbl.shape}. Skipping.")
             continue
+            
+        is_3d = img.ndim == 3
+        labeled_slices = None
+        
+        if is_3d:
+            # Find which slices actually contain user labels (> 0)
+            labeled_slices = np.where(np.any(lbl > 0, axis=(1, 2)))[0].tolist()
+            if not labeled_slices:
+                print(f"  -> Warning: No labels found (values > 0) in {lbl_path.name}. Skipping.")
+                continue
+            
+            # Sub-select only the labels corresponding to the extracted features
+            lbl_to_use = lbl[labeled_slices]
+            print(f"  -> 3D Image detected. Extracting features for {len(labeled_slices)} labeled slice(s) out of {img.shape[0]}.")
+        else:
+            if not np.any(lbl > 0):
+                print(f"  -> Warning: No labels found (values > 0) in {lbl_path.name}. Skipping.")
+                continue
+            lbl_to_use = lbl
+            print(f"  -> 2D Image detected. Extracting features.")
 
-        # Extract features
-        print(f"  -> Extracting features...")
-        features = extract_features_for_image(img, feature_creator)
+        # Extract features (efficiently processes only the necessary slices for 3D)
+        features = extract_features_for_image(img, feature_creator, indices=labeled_slices)
 
         # Flatten arrays for training
         # Background is labeled 1, Object is labeled 2, Unlabeled is 0.
-        mask = lbl > 0
-        if not np.any(mask):
-            print(f"  -> Warning: No labels found (values > 0) in {lbl_path.name}. Skipping.")
-            continue
+        mask = lbl_to_use > 0
 
         # Reshape features from (Y, X, F) to (N, F) where N is number of labeled pixels
         # and labels from (Y, X) to (N,)
         X_labeled = features[mask]
-        y_labeled = lbl[mask]
+        y_labeled = lbl_to_use[mask]
 
         all_X.append(X_labeled)
         all_y.append(y_labeled)
@@ -185,8 +208,8 @@ def batch_train_models(parent_folder: str | Path, output_filename: str = "batch_
     print(f"Model successfully saved to: {output_path}")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Batch train a napari-rf model from a folder of segmented 2D images.")
+def main():
+    parser = argparse.ArgumentParser(description="Batch train a napari-rf model from a folder of segmented 2D and 3D images.")
     parser.add_argument(
         "parent_folder", 
         type=str, 
@@ -201,3 +224,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     batch_train_models(args.parent_folder, args.output)
+
+if __name__ == "__main__":
+    main()
